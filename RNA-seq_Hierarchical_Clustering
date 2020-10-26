@@ -1,0 +1,46 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(ballgown)
+library(ggplot2)
+library(genefilter)
+library(dplyr)
+library(DESeq2)
+setwd("G:/BorrisProject/ballgown")
+
+pheno_data=read.csv('borris_project_phenodata.csv')
+
+bg=ballgown(dataDir="G:/BorrisProject/BAM/useonlyref/whole",samplePattern="P",pData=pheno_data)
+bg_filt=subset(bg,'rowVars(texpr(bg))>1')
+
+bg_table=texpr(bg_filt,'all')
+bg_gene_names=unique(bg_table[,9:10])
+bg_table=gexpr(bg_filt)
+```
+```{r}
+library(pheatmap)
+pdf('cluster.pdf')
+pheatmap(as.matrix(bg_table),scale='row',clustering_distance_rows='correlation',clustering_method = 'complete', main='genes')
+dev.off()
+```
+```{r}
+pca_data=prcomp(t(bg_table))
+pca_data_perc=round(100*pca_data$sdev^2/sum(pca_data$sdev^2),1)
+df_pca_data=data.frame(PC1=pca_data$x[,1],PC2=pca_data$x[,2],sample=rep(c("1","2","3","4","5","6"),each=2))
+```
+```{r}
+ggplot(df_pca_data,aes(PC1,PC2,color=sample))+geom_point()
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
