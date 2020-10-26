@@ -1,0 +1,110 @@
+import csv
+import networkx as nx
+import matplotlib.pyplot as plt
+import numpy as np
+import statistics
+import random
+import math
+random.seed(1)
+
+def get_coordinates_in_circle(n):
+    return_list = []
+    for i in range(n):
+        theta = float(i)/n*2*3.141592654
+        x = np.cos(theta)
+        y = np.sin(theta)
+        return_list.append((x,y))
+    return return_list
+
+node_dict = {}
+with open('datasets/table.tsv', newline='') as tsvfile:
+	reader = csv.DictReader(tsvfile, delimiter='\t')
+	for row in reader:
+		gene = row['Correlated Gene']
+		node_size = row["Spearman's Correlation"]
+		node_dict[gene] = node_size
+print(len(node_dict))
+pon1_top20_dict = {}
+top20_list = sorted(node_dict.items(), key=lambda x: x[1], reverse=True)[:20]
+for (gene, node_size) in top20_list:
+	pon1_top20_dict[gene] = float(node_size)*1000
+	del node_dict[gene]
+
+#circle_pos = [(75,15), (60,30), (45,45), (60,30), (15,75), (0,90), (-15,75), (-30,60), (-45,45), (-60,30), (-75,15), (-75,-15), (-60,-30), (-45,-45), (-30,-60), (-15,-75), (0,-90), (15,-75), (30,-60), (45,-45), (60,-30), (75,-15)]
+mean_top20_spearmanr = statistics.mean(pon1_top20_dict.values())
+
+design_nodes = list(node_dict.keys())[:3000]
+
+G = nx.Graph()
+G.add_node('PON1')
+G.add_nodes_from(design_nodes)
+
+edge_list = []
+for node in design_nodes:
+	edge_list.append(('PON1', node))
+G.add_edges_from(edge_list)
+
+
+
+'''node_size = []
+node_color = []
+for node in G.nodes:
+	try:
+		node_size.append(pon1_top20_dict[node])
+		node_color.append('pink')
+	except:
+		if node == 'PON1':
+			node_size.append(mean_top20_spearmanr)
+			node_color.append('pink')
+		else:
+			node_size.append(mean_top20_spearmanr/2000)
+			node_color.append('lightgray')'''
+
+#pos = nx.random_layout(G)
+pos = {}
+for node in design_nodes:
+	#r = np.sqrt(random.uniform(0,2))
+	#theta = random.uniform(0,2) * 2 * np.pi
+	#x = np.cos(theta)
+	#y = np.sin(theta)
+	alpha = 2*np.pi*random.random()
+	r = math.sqrt(random.random())
+	x = r*np.cos(alpha)
+	y = r*np.sin(alpha)
+	#x = random.uniform(-.9,.9)
+	#y = random.uniform(-.9,.9)
+	pos[node] = (x,y)
+pos['PON1'] = (0,0)
+
+nx.draw(G, pos=pos, node_size=5, node_color='lightgrey', edge_color='lightgrey', width=.2)
+plt.savefig('images/fig3_a.png', dpi=300)
+plt.close()
+
+G2 = nx.Graph()
+G2.add_node('PON1')
+G2.add_nodes_from(pon1_top20_dict.keys())
+
+edge_list2 = []
+for node in pon1_top20_dict.keys():
+	edge_list2.append(('PON1', node))
+G2.add_edges_from(edge_list2)
+
+pos2 = {}
+circle_pos = get_coordinates_in_circle(20)
+for index, node in enumerate(pon1_top20_dict.keys()):
+	pos2[node] = circle_pos[index]
+pon1_top20_dict['PON1'] = mean_top20_spearmanr
+pos2['PON1'] = (0,0)
+
+node_labels = {}
+for node in pon1_top20_dict.keys():
+	node_labels[node] = node
+
+node_size = []
+for node in G2.nodes:
+	node_size.append(pon1_top20_dict[node])
+
+nx.draw(G2, pos=pos2, node_size=node_size, with_labels=False, font_size=5, node_color='pink', edge_color='dodgerblue', width=3)
+nx.draw_networkx_labels(G2, pos=pos2, labels=node_labels)
+plt.savefig('images/fig3_b.png', dpi=300, transparent=True)
+plt.close()
