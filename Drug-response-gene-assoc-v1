@@ -1,0 +1,97 @@
+import numpy as np
+import csv
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import spearmanr
+import math
+
+# Get corresponding gene names of cosmic IDs
+cell_id = {}
+
+with open('datasets/cosmic_id.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		cell_id[row['COSMIC_ID']] = row['Name']
+
+# Perform computation
+wanted_genes = ['FUT1', 'FUT2', 'FUT3', 'FUT4', 'FUT5', 'FUT6', 'FUT7', 'FUT8', 'FUT9', 'FUT10', 'FUT11', 'POFUT1', 'POFUT2']
+
+gene_list = []
+expression_dataset = [] 
+
+with open('datasets/expression_input.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		gene = row['\ufeffGENE_SYMBOLS']
+		if gene in wanted_genes:
+			gene_list.append(gene)
+			del row['\ufeffGENE_SYMBOLS']
+			expression_dataset.append(row)
+	#print(expression_dataset)
+
+drug_dataset = {}
+with open('datasets/GDSC2_fitted_dose_response_15Oct19.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		cosmic_id = row['COSMIC_ID']
+		ln_ic50 = row['LN_IC50']
+		drug_name = row['DRUG_NAME']
+		if drug_name not in drug_dataset.keys():
+			drug_dataset[drug_name] = [(cosmic_id, ln_ic50)]
+		else:
+			drug_dataset[drug_name].append((cosmic_id, ln_ic50))
+	#print(len(drug_dataset))
+
+cl_groups_dataset = {}
+with open('datasets/cl_groups.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		cosmic_id = row['COSMIC_ID']
+		cl_group = row['TYPE']
+		if cl_group not in ['', 'UNABLE TO CLASSIFY']:
+			if cl_group in cl_groups_dataset.keys():
+				cl_groups_dataset[cl_group].append(cosmic_id)
+			else:
+				cl_groups_dataset[cl_group] = [cosmic_id]
+#print(cl_groups_dataset)
+
+heatmap_matrix = np.zeros((len(expression_dataset),len(cl_groups_dataset)))
+
+for expression_index, gene in enumerate(expression_dataset):
+	#heatmap_matrix.append([])
+
+	cell_line_expression = {}
+	cell_line_drug = {}
+	for cell_line, expression_value in gene.items():
+		cell_line_expression[cell_line[5:]] = expression_value
+		cell_line_drug[cell_line[5:]] = 'x'
+
+	for drug, cell_line_list in drug_dataset.items():
+		for (cell_line, drug_value) in cell_line_list:
+			if cell_line not in cell_line_drug.keys():
+				cell_line_expression[cell_line] = 'x'
+			cell_line_drug[cell_line] = drug_value
+
+	group_index = 0
+	for group, cell_line_list in cl_groups_dataset.items():
+		cl_exp_list = []
+		cl_drug_list = []
+		for cell_line in cell_line_list:
+			try:
+				cl_expression = cell_line_expression[cell_line]
+				cl_drug_response = cell_line_drug[cell_line]
+				if cl_expression != 'x' and cl_drug_response != 'x':
+					cl_exp_list.append(float(cl_expression))
+					cl_drug_list.append(float(cl_drug_response))
+			except KeyError:
+				pass
+		rho, p = spearmanr(cl_exp_list, cl_drug_list)
+		if math.isnan(rho):
+			rho = 0
+		heatmap_matrix[expression_index][group_index] = rho
+		group_index += 1
+
+ax = sns.heatmap(heatmap_matrix, cmap='coolwarm', xticklabels=True, yticklabels=True)
+ax.set_xticklabels(list(cl_groups_dataset.keys()), rotation=90)
+ax.set_yticklabels(gene_list, rotation=0)
+plt.savefig('images/fig1.png', dpi=1200)
