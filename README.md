@@ -21,3 +21,4 @@ stringtie -e -B -p 8 -G /directory/for/GTF -o output/output.gtf sample.bam
 
 3. Analysis of GDSC and CCLE datasets
 Python scripts used for correlation or association analyses in Figure 1, Supplementary Figures, Figure 3.
+
