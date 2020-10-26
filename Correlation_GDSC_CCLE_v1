@@ -1,0 +1,458 @@
+import numpy as np
+import csv
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import spearmanr
+import math
+import statistics
+import networkx as nx
+np.seterr(divide='ignore', invalid='ignore')
+
+'''
+# Perform computation
+### GDSC
+print('--- GDSC ----')
+gdsc_gene_list = ['FUT1', 'FUT2', 'FUT3', 'FUT5', 'FUT6', 'FUT7', 'FUT8', 'FUT9', 'FUT10', 'FUT11', 'POFUT1', 'POFUT2']
+
+cl_groups_dataset = {}
+with open('datasets/cl_groups.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		cosmic_id = row['COSMIC_ID']
+		cl_group = row['TYPE']
+		if cl_group not in ['', 'UNABLE TO CLASSIFY']:
+			if cl_group in cl_groups_dataset.keys():
+				cl_groups_dataset[cl_group].append(cosmic_id)
+			else:
+				cl_groups_dataset[cl_group] = [cosmic_id]
+#print(cl_groups_dataset)
+
+#gdsc_gene_list = ['FUT8']
+#gdsc_expression_dataset = [[]]
+
+gdsc_expression_dataset = [[], [], [], [], [], [], [], [], [], [], [], []] 
+with open('datasets/expression_input.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		gene = row['\ufeffGENE_SYMBOLS']
+		if gene in gdsc_gene_list:
+			gdsc_gene_list[gdsc_gene_list.index(gene)] = gene
+			del row['\ufeffGENE_SYMBOLS']
+			gdsc_expression_dataset[gdsc_gene_list.index(gene)] = row
+
+gdsc_drug_dataset = {}
+with open('datasets/GDSC2_fitted_dose_response_15Oct19.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		cosmic_id = row['COSMIC_ID']
+		ln_ic50 = row['LN_IC50']
+		drug_name = row['DRUG_NAME']
+		if drug_name not in gdsc_drug_dataset.keys():
+			gdsc_drug_dataset[drug_name] = [(cosmic_id, ln_ic50)]
+		else:
+			gdsc_drug_dataset[drug_name].append((cosmic_id, ln_ic50))
+#print(len(gdsc_drug_dataset))
+
+gdsc_drug_class_dataset = {}
+with open('datasets/TableS1F_screened-compounds-GDSC.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		drug = row['Name']
+		drug_class = row['Targeted process/pathway']
+		if drug_class in gdsc_drug_class_dataset.keys():
+			gdsc_drug_class_dataset[drug_class].append(drug)
+		else:
+			gdsc_drug_class_dataset[drug_class] = [drug]
+#print(len(gdsc_drug_class_dataset.keys()))
+
+heatmap_matrix_expression = np.zeros((len(cl_groups_dataset),len(gdsc_gene_list)+1))
+heatmap_matrix_spearman = np.zeros((len(cl_groups_dataset),len(gdsc_gene_list)+1))
+heatmap_matrix_spearman[:][-1] = -1.
+heatmap_matrix_spearman[:][-1] = 1.
+
+for gene_index, gene in enumerate(gdsc_expression_dataset):
+	print(str(gdsc_gene_list[gene_index]))
+	cell_line_expression = {}
+	cell_line_drug_response = {}
+	for cell_line, expression_value in gene.items():
+		cell_line_expression[cell_line[5:]] = expression_value
+		cell_line_drug_response[cell_line[5:]] = 'x'
+
+	for drug, cell_line_list in gdsc_drug_dataset.items():
+		for (cell_line, drug_value) in cell_line_list:
+			if cell_line not in cell_line_drug_response.keys():
+				cell_line_expression[cell_line] = 'x'
+			cell_line_drug_response[cell_line] = drug_value
+
+	# Expression + Spearman for Expression-Drug Response
+	group_index = 0
+	for group, cell_line_list in cl_groups_dataset.items():
+		cl_exp_list = []
+		cl_drug_list = []
+		for cell_line in cell_line_list:
+			try:
+				cl_expression = cell_line_expression[cell_line]
+				cl_drug_response = cell_line_drug_response[cell_line]
+				if cl_expression != 'x' and cl_drug_response != 'x':
+					cl_exp_list.append(float(cl_expression))
+					cl_drug_list.append(float(cl_drug_response))
+			except KeyError:
+				pass
+
+		try:
+			heatmap_matrix_expression[group_index][gene_index] = statistics.mean(cl_exp_list)
+		except:
+			pass
+
+		rho, p = spearmanr(cl_exp_list, cl_drug_list)
+		if math.isnan(rho):
+			rho = 0
+		heatmap_matrix_spearman[group_index][gene_index] = rho
+
+		group_index += 1
+
+	# Supplementary
+	heatmap_supplementary = np.zeros((len(gdsc_drug_dataset),len(cl_groups_dataset)))
+	drug_index = 0
+	for drug, drug_cell_line_list in gdsc_drug_dataset.items():
+		group_index = 0
+		for group, group_cell_line_list in cl_groups_dataset.items():
+			cl_exp_list = []
+			cl_drug_list = []
+			for (cell_line, drug_value) in drug_cell_line_list:
+				if cell_line in group_cell_line_list:
+					if cell_line_expression[cell_line] != 'x' and drug_value != 'x':
+						cl_exp_list.append(float(cell_line_expression[cell_line]))
+						cl_drug_list.append(float(drug_value))
+			rho, p = spearmanr(cl_exp_list, cl_drug_list)
+			if math.isnan(rho):
+				rho = 0
+			heatmap_supplementary[drug_index][group_index] = rho
+			group_index += 1
+		drug_index += 1
+
+	# Nodes
+	if gdsc_gene_list[gene_index] == 'FUT8':
+		fut8_spearman = {}
+		for drug, drug_cell_line_list in gdsc_drug_dataset.items():
+			fut8_exp_list = []
+			fut8_drug_list = []
+
+			for (cell_line, drug_value) in drug_cell_line_list:
+				if cell_line_expression[cell_line] != 'x' and drug_value != 'x':
+					fut8_exp_list.append(float(cell_line_expression[cell_line]))
+					fut8_drug_list.append(float(drug_value))
+
+			rho, p = spearmanr(fut8_exp_list, fut8_drug_list)
+			if rho <= 0:
+				rho = 100
+			elif rho > 0 and rho <= 0.1:
+				rho = 400
+			else:
+				rho = 1000
+			fut8_spearman[drug] = rho
+			drug_index += 1
+
+		node_list = [drug for drug in fut8_spearman.keys()]
+
+		G = nx.Graph()
+		G.add_nodes_from(node_list)
+		node_size = []
+		for node in G.nodes():
+			node_size.append(fut8_spearman[node])
+
+		node_x = 0
+		node_y = 0
+		node_pos = {}
+		for node in G.nodes():
+			node_pos[node] = (node_x, node_y)
+			node_y += 10
+			if node_y > 200:
+				node_y = 0
+				node_x += 10
+
+		plt.subplots(figsize=(15,15))
+		nx.draw(G, pos=node_pos, node_size=node_size, with_labels=True, font_size=8, node_color='pink')
+		plt.savefig('images/GDSC/nodes.png', dpi=300)
+		plt.close()
+
+	plt.subplots(figsize=(8,30))
+	ax = sns.heatmap(heatmap_supplementary, cmap='bwr', xticklabels=True, yticklabels=True)
+	ax.set_yticklabels(list(gdsc_drug_dataset.keys()), rotation=0)
+	ax.set_xticklabels(list(cl_groups_dataset.keys()), rotation=90)
+	plt.savefig('images/GDSC/fig1_supp_'+str(gdsc_gene_list[gene_index])+'.png', dpi=300)
+	plt.close()
+
+plt.subplots(figsize=(8,15))
+ax = sns.heatmap(heatmap_matrix_expression, cmap='Greens', xticklabels=True, yticklabels=True, annot=True, fmt='.1f')
+ax.set_yticklabels(list(cl_groups_dataset.keys()), rotation=0)
+ax.set_xticklabels(gdsc_gene_list, rotation=90)
+plt.savefig('images/GDSC/fig1_expression.png', dpi=300)
+plt.close()
+
+plt.subplots(figsize=(8,15))
+ax = sns.heatmap(heatmap_matrix_spearman, cmap='RdYlBu', xticklabels=True, yticklabels=True)
+ax.set_yticklabels(list(cl_groups_dataset.keys()), rotation=0)
+ax.set_xticklabels(gdsc_gene_list, rotation=90)
+plt.savefig('images/GDSC/fig1_spearman.png', dpi=300)
+plt.close()
+
+### CCLE
+print('--- CCLE ---')
+ccle_gene_list = ['FUT1', 'FUT2', 'FUT3', 'FUT4', 'FUT5', 'FUT6', 'FUT7', 'FUT8', 'FUT9', 'FUT10', 'FUT11', 'POFUT1', 'POFUT2']
+
+# Get corresponding gene names of cosmic IDs
+depmap_id = {}
+cosmic_to_depmap = {}
+depmap_to_cosmic = {}
+with open('datasets/sample_info.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		depmap_id[row['stripped_cell_line_name']] = row['DepMap_ID']
+		if row['COSMIC_ID'] != '':
+			cosmic_to_depmap[row['COSMIC_ID'][:-2]] = row['DepMap_ID']
+			depmap_to_cosmic[row['DepMap_ID']] = row['COSMIC_ID'][:-2]
+#print(depmap_id)
+#print(cosmic_to_depmap)
+#print(depmap_to_cosmic)
+
+#ccle_gene_list = ['FUT8']
+#ccle_expression_dataset = [[]]
+
+ccle_expression_dataset = [[], [], [], [], [], [], [], [], [], [], [], [], []]
+with open('datasets/CCLE_expression_transpose.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		gene = row['']
+		gene = gene[:gene.find('(')-1]
+		if gene in ccle_gene_list:
+			del row['']
+			ccle_expression_dataset[ccle_gene_list.index(gene)] = row
+#print(ccle_expression_dataset)
+
+ccle_drug_dataset = {}
+with open('datasets/CCLE_NP24.2009_Drug_data_2015.02.24.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		cell_line_name = row['Primary Cell Line Name'].upper().replace('-', '').replace('(', '').replace(')', '').replace('.', '').replace(' ', '').replace('/', '').replace(':', '')
+		ln_ic50 = row['IC50 (uM)']
+		drug_name = row['Compound']
+		try:
+			if drug_name not in ccle_drug_dataset.keys():
+				ccle_drug_dataset[drug_name] = [(depmap_id[cell_line_name], ln_ic50)]
+			else:
+				ccle_drug_dataset[drug_name].append((depmap_id[cell_line_name], ln_ic50))
+		except:
+			pass
+
+heatmap_matrix_expression = np.zeros((len(cl_groups_dataset),len(ccle_gene_list)+1))
+heatmap_matrix_spearman = np.zeros((len(cl_groups_dataset),len(ccle_gene_list)+1))
+heatmap_matrix_spearman[:][-1] = -1.
+heatmap_matrix_spearman[:][-1] = 1.
+
+for gene_index, gene in enumerate(ccle_expression_dataset):
+	print(str(ccle_gene_list[gene_index]))
+	cell_line_expression = {}
+	cell_line_drug_response = {}
+	for cell_line, expression_value in gene.items():
+		cell_line_expression[cell_line] = expression_value
+		cell_line_drug_response[cell_line] = 'x'
+
+	for drug, cell_line_list in ccle_drug_dataset.items():
+		for (cell_line, drug_value) in cell_line_list:
+			if cell_line not in cell_line_drug_response.keys():
+				cell_line_expression[cell_line] = 'x'
+			cell_line_drug_response[cell_line] = drug_value
+
+	# Expression + Spearman for Expression-Drug Response
+	group_index = 0
+	for group, cell_line_list in cl_groups_dataset.items():
+		cl_exp_list = []
+		cl_drug_list = []
+		for cell_line in cell_line_list:
+			try:
+				cl_expression = cell_line_expression[cosmic_to_depmap[cell_line]]
+				cl_drug_response = cell_line_drug_response[cosmic_to_depmap[cell_line]]
+				if cl_expression != 'x' and cl_drug_response != 'x':
+					cl_exp_list.append(float(cl_expression))
+					cl_drug_list.append(float(cl_drug_response))
+			except KeyError:
+				pass
+
+		try:
+			heatmap_matrix_expression[group_index][gene_index] = statistics.mean(cl_exp_list)
+		except:
+			pass
+
+		rho, p = spearmanr(cl_exp_list, cl_drug_list)
+		if math.isnan(rho):
+			rho = 0
+		heatmap_matrix_spearman[group_index][gene_index] = rho
+
+		group_index += 1
+	
+	# Supplementary
+	heatmap_supplementary = np.zeros((len(ccle_drug_dataset),len(cl_groups_dataset)))
+	drug_index = 0
+	for drug, drug_cell_line_list in ccle_drug_dataset.items():
+		group_index = 0
+		for group, group_cell_line_list in cl_groups_dataset.items():
+			cl_exp_list = []
+			cl_drug_list = []
+			for (cell_line, drug_value) in drug_cell_line_list:
+				try: 
+					if depmap_to_cosmic[cell_line] in group_cell_line_list:
+						if cell_line_expression[cell_line] != 'x' and drug_value != 'x':
+							cl_exp_list.append(float(cell_line_expression[cell_line]))
+							cl_drug_list.append(float(drug_value))
+				except:
+					pass
+			rho, p = spearmanr(cl_exp_list, cl_drug_list)
+			if math.isnan(rho):
+				rho = 0
+			heatmap_supplementary[drug_index][group_index] = rho
+			group_index += 1
+		drug_index += 1
+
+	# Nodes
+	if ccle_gene_list[gene_index] == 'FUT8':
+		fut8_spearman = {}
+		for drug, drug_cell_line_list in ccle_drug_dataset.items():
+			fut8_exp_list = []
+			fut8_drug_list = []
+
+			for (cell_line, drug_value) in drug_cell_line_list:
+				if cell_line_expression[cell_line] != 'x' and drug_value != 'x':
+					fut8_exp_list.append(float(cell_line_expression[cell_line]))
+					fut8_drug_list.append(float(drug_value))
+
+			rho, p = spearmanr(fut8_exp_list, fut8_drug_list)
+			if rho <= 0:
+				rho = 100
+			elif rho > 0 and rho <= 0.1:
+				rho = 400
+			else:
+				rho = 1000
+			fut8_spearman[drug] = rho
+			drug_index += 1
+
+		node_list = [drug for drug in fut8_spearman.keys()]
+
+		G = nx.Graph()
+		G.add_nodes_from(node_list)
+		node_size = []
+		for node in G.nodes():
+			node_size.append(fut8_spearman[node])
+
+		node_x = 0
+		node_y = 0
+		node_pos = {}
+		for node in G.nodes():
+			node_pos[node] = (node_x, node_y)
+			node_y += 40
+			if node_y > 200:
+				node_y = 0
+				node_x += 40
+
+		plt.subplots(figsize=(12,12))
+		nx.draw(G, pos=node_pos, node_size=node_size, with_labels=True, font_size=8, node_color='pink')
+		plt.savefig('images/CCLE/nodes.png', dpi=300)
+		plt.close()
+	
+	plt.subplots(figsize=(10,7))
+	ax = sns.heatmap(heatmap_supplementary, cmap='bwr', xticklabels=True, yticklabels=True)
+	ax.set_yticklabels(list(ccle_drug_dataset.keys()), rotation=0)
+	ax.set_xticklabels(list(cl_groups_dataset.keys()), rotation=90)
+	plt.savefig('images/CCLE/fig1_supp_'+str(ccle_gene_list[gene_index])+'.png', dpi=300)
+	plt.close()
+
+plt.subplots(figsize=(8,15))
+ax = sns.heatmap(heatmap_matrix_expression, cmap='Greens', xticklabels=True, yticklabels=True, annot=True, fmt='.1f')
+ax.set_yticklabels(list(cl_groups_dataset.keys()), rotation=0)
+ax.set_xticklabels(ccle_gene_list, rotation=90)
+plt.savefig('images/CCLE/fig1_expression.png', dpi=300)
+plt.close()
+
+plt.subplots(figsize=(8,15))
+ax = sns.heatmap(heatmap_matrix_spearman, cmap='RdYlBu', xticklabels=True, yticklabels=True)
+ax.set_yticklabels(list(cl_groups_dataset.keys()), rotation=0)
+ax.set_xticklabels(ccle_gene_list, rotation=90)
+plt.savefig('images/CCLE/fig1_spearman.png', dpi=300)
+plt.close()'''
+
+'''
+### FOR VISUALIZATION - DEPMAP
+with open('datasets/gene_dependency_transpose.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		given_name = row[''].split()
+		gene = given_name[0]
+		if gene == 'FUT8':
+			del row['']
+			fut8_gene_dependency_dataset = row
+#print(fut8_gene_dependency_dataset)
+
+fut8_gene_dependency_dict = {}
+for cell_line, gene_dependency in fut8_gene_dependency_dataset.items():
+	cell_line = cell_line.split('_')[0]
+	fut8_gene_dependency_dict[cell_line] = float(gene_dependency)
+#print(len(fut8_gene_dependency_dict.keys()))
+
+depmap_drug_sensitivity_dict = {}
+depmap_cl_list = []
+depmap_drug_sensitivity_dataset = []
+with open('datasets/primary_replicate_collapsed_logfold_change.csv', newline='') as csvfile:
+	reader = csv.DictReader(csvfile)
+	for row in reader:
+		cell_line = row['']
+		if cell_line in fut8_gene_dependency_dict.keys():
+			depmap_cl_list.append(cell_line)
+			depmap_drug_sensitivity_dict[cell_line] = 0.
+			del row['']
+			depmap_drug_sensitivity_dataset.append(row)
+#print(len(depmap_drug_sensitivity_dict.keys()))
+#print(len(depmap_drug_sensitivity_dataset))
+
+for cl_index, cl_drug_sensitivity_values in enumerate(depmap_drug_sensitivity_dataset):
+	cell_line = depmap_cl_list[cl_index]
+	drug_response_resistant_count = 0.
+	for drug in cl_drug_sensitivity_values:
+		if cl_drug_sensitivity_values[drug] != 'NA':
+			if float(cl_drug_sensitivity_values[drug]) > 0.:
+				drug_response_resistant_count += 1.
+				#drug_response_values.append(float(cl_drug_sensitivity_values[drug]))
+	depmap_drug_sensitivity_dict[cell_line] = drug_response_resistant_count
+
+#print(depmap_drug_sensitivity_dict)
+#print(depmap_drug_sensitivity_dict.values())
+sorted_depmap = sorted(depmap_drug_sensitivity_dict.items(), key=lambda x:x[1], reverse=True)
+print(sorted_depmap)
+ordering_of_cls = [item[0] for item in sorted_depmap]
+#print(len(ordering_of_cls))
+#sorted_drug_response = sorted(depmap_drug_response_dataset, reverse=False)
+#mean_drug_response_values.sort(reverse=True)
+#print(mean_drug_response_values)
+
+
+for_heatmap = []
+
+
+for cl in ordering_of_cls:
+	for_heatmap.append(fut8_gene_dependency_dict[cl])
+
+for_heatmap_1 = np.array(for_heatmap).reshape((len(for_heatmap),1))
+#plt.subplots(figsize=(8,15))
+ax = sns.heatmap(for_heatmap_1, cmap='Greens')#, xticklabels=True, yticklabels=True)
+#ax.set_yticklabels(list(cl_groups_dataset.keys()), rotation=0)
+#ax.set_xticklabels(ccle_gene_list, rotation=90)
+plt.savefig('images/cancer_depmap_1.png', dpi=300)
+plt.close()
+
+for_heatmap_2 = np.array(for_heatmap).reshape((16,-1))
+
+#plt.subplots(figsize=(8,15))
+ax = sns.heatmap(for_heatmap_2, cmap='Greens')#, xticklabels=True, yticklabels=True)
+#ax.set_yticklabels(list(cl_groups_dataset.keys()), rotation=0)
+#ax.set_xticklabels(ccle_gene_list, rotation=90)
+plt.savefig('images/cancer_depmap_2.png', dpi=300)
+plt.close()'''
