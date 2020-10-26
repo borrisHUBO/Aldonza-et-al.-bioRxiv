@@ -1,0 +1,678 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 41,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "G:\\BorrisProject\\Spearman\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Import modules\n",
+    "\n",
+    "import numpy as np\n",
+    "import pandas as pd\n",
+    "import os\n",
+    "import glob\n",
+    "from scipy.stats import spearmanr, ttest_ind\n",
+    "import matplotlib.pyplot as plt"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 43,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--- cancer type sync ---\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Methylation dataset pre-processing\n",
+    "\n",
+    "# 0. Sync cancer types\n",
+    "cancer_type=pd.read_csv(os.getcwd()+'\\data\\CancerTypeSync.csv',header=None,index_col=0,squeeze=True)\n",
+    "cancer_dict=cancer_type.to_dict()\n",
+    "print('--- Sync cancer type ---')\n",
+    "\n",
+    "# 1. Methylation level of FUTs and drug sensitivity per cancer type\n",
+    "FUT_files=os.listdir(os.getcwd()+'\\data\\Methylation datasets')\n",
+    "\n",
+    "FUT_dict={'Group':list(set(list(cancer_dict.values())))}\n",
+    "FUT_all_df=pd.DataFrame(FUT_dict)\n",
+    "for filename in FUT_files:\n",
+    "    FUT_gene=filename.split('_')[0]\n",
+    "    FUT_methylation=pd.read_csv(os.path.join(os.getcwd()+\"\\data\\Methylation datasets\",filename))\n",
+    "    FUT_methylation=FUT_methylation.loc[FUT_methylation.loc[:,'Primary Disease'].isin(list(set(list(cancer_dict.values())))),:]\n",
+    "    \n",
+    "    ratios=[]\n",
+    "    for group in list(set(list(cancer_dict.values()))):\n",
+    "        group_sum=0\n",
+    "        group_n=0\n",
+    "        \n",
+    "        for i in FUT_methylation.index:\n",
+    "            if group==FUT_methylation.loc[i,'Primary Disease']:\n",
+    "                group_sum+=float(FUT_methylation.loc[i,'Methylation Fraction'])\n",
+    "                group_n+=1\n",
+    "        ratios.append(group_sum/group_n)\n",
+    "    temp_dict={'Group':list(set(list(cancer_dict.values()))),FUT_gene:ratios}\n",
+    "    \n",
+    "    temp_df=pd.DataFrame(temp_dict)\n",
+    "    FUT_all_df=pd.merge(FUT_all_df,temp_df,on='Group')\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 44,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--- GDSC ---\n"
+     ]
+    }
+   ],
+   "source": [
+    "# 2. Drug Sensitivity data\n",
+    "GDSC_list = ['\\meanwhat_gdsc.txt','\\GDSC_targeted.txt','\\GDSC_cytotoxic.txt']\n",
+    "print('--- GDSC ---')\n",
+    "\n",
+    "GDSC_result=[]\n",
+    "for i, GDSC in enumerate(GDSC_list):\n",
+    "    GDSC_drug=pd.read_csv(os.getcwd()+\"\\data\\Drug sensitivity datasets\"+GDSC,sep='\\t')\n",
+    "    \n",
+    "    GDSC_drug=GDSC_drug.replace(0,np.nan)\n",
+    "    GDSC_drug=GDSC_drug.replace('False',np.nan)\n",
+    "    GDSC_drug.loc[:,'Drug_mean']=GDSC_drug.iloc[:,1:].mean(axis=1)\n",
+    "    GDSC_drug.loc[:,'n']=GDSC_drug.iloc[:,1:-1].count(axis='columns')\n",
+    "    GDSC_drug=GDSC_drug.loc[GDSC_drug.loc[:,'Group'].isin(list(cancer_dict.keys())),:]\n",
+    "\n",
+    "\n",
+    "    temp_dict={}\n",
+    "    for index in GDSC_drug.index:\n",
+    "        conv_Group=cancer_dict[GDSC_drug.loc[index,'Group']]\n",
+    "        drug_mean=GDSC_drug.loc[index,'Drug_mean']\n",
+    "        n=GDSC_drug.loc[index,'n']\n",
+    "\n",
+    "\n",
+    "        if conv_Group not in temp_dict:\n",
+    "            temp_dict[conv_Group]=[drug_mean,n]\n",
+    "\n",
+    "        else:\n",
+    "            temp_dict[conv_Group]=[(temp_dict[conv_Group][0]*temp_dict[conv_Group][1]+drug_mean*n)/(temp_dict[conv_Group][1]+n),(temp_dict[conv_Group][1]+n)]\n",
+    "\n",
+    "    for keys in temp_dict.keys():\n",
+    "        temp_dict[keys]=temp_dict[keys][0]\n",
+    "    temp_dict={'Group':list(temp_dict.keys()),GDSC_list[i]:list(temp_dict.values())}\n",
+    "    temp_df=pd.DataFrame(temp_dict)\n",
+    "    FUT_all_df=pd.merge(FUT_all_df,temp_df,on='Group')\n",
+    "\n",
+    "    FUT_all_df.to_csv('FUT_result.csv', sep=',', na_rep='NaN')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 46,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{'Group': SpearmanrResult(correlation=0.2676470588235294, pvalue=0.3162544185483094),\n",
+       " 'FUT10': SpearmanrResult(correlation=-0.4941176470588235, pvalue=0.051723442249235474),\n",
+       " 'FUT11': SpearmanrResult(correlation=0.14705882352941177, pvalue=0.5867933937012053),\n",
+       " 'FUT1': SpearmanrResult(correlation=0.3941176470588235, pvalue=0.13091285429899105),\n",
+       " 'FUT2': SpearmanrResult(correlation=-0.25588235294117645, pvalue=0.33878990807124576),\n",
+       " 'FUT4': SpearmanrResult(correlation=-0.36470588235294116, pvalue=0.16486839724475402),\n",
+       " 'FUT6': SpearmanrResult(correlation=0.27058823529411763, pvalue=0.31076062710233504),\n",
+       " 'FUT8': SpearmanrResult(correlation=-0.1647058823529412, pvalue=0.5421481352010777),\n",
+       " 'FUT9': SpearmanrResult(correlation=-0.3058823529411765, pvalue=0.24925429892891857),\n",
+       " 'POFUT1': SpearmanrResult(correlation=-0.34411764705882353, pvalue=0.19185563142554293),\n",
+       " 'POFUT2': SpearmanrResult(correlation=-0.05294117647058824, pvalue=0.8456104411493658),\n",
+       " '\\\\meanwhat_gdsc.txt': SpearmanrResult(correlation=1.0, pvalue=0.0),\n",
+       " '\\\\GDSC_targeted.txt': SpearmanrResult(correlation=0.9205882352941176, pvalue=4.3204104274523115e-07),\n",
+       " '\\\\GDSC_cytotoxic.txt': SpearmanrResult(correlation=0.8323529411764706, pvalue=6.328124573232542e-05)}"
+      ]
+     },
+     "execution_count": 46,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Speraman analysis between methylation levels of FUTs and GDSC drug sensitivities\n",
+    "\n",
+    "## Total drugs\n",
+    "\n",
+    "correlations={}\n",
+    "for col in FUT_all_df.columns:\n",
+    "    correlations[col]=spearmanr(FUT_all_df[col],FUT_all_df['\\meanwhat_gdsc.txt'])\n",
+    "correlations"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 47,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{'Group': SpearmanrResult(correlation=0.21470588235294116, pvalue=0.4245592336201027),\n",
+       " 'FUT10': SpearmanrResult(correlation=-0.4941176470588235, pvalue=0.051723442249235474),\n",
+       " 'FUT11': SpearmanrResult(correlation=0.18823529411764706, pvalue=0.4850866091454682),\n",
+       " 'FUT1': SpearmanrResult(correlation=0.35000000000000003, pvalue=0.18386882202619317),\n",
+       " 'FUT2': SpearmanrResult(correlation=-0.03823529411764706, pvalue=0.8881976539853073),\n",
+       " 'FUT4': SpearmanrResult(correlation=-0.25, pvalue=0.3503914791072017),\n",
+       " 'FUT6': SpearmanrResult(correlation=0.37058823529411766, pvalue=0.15765046473782054),\n",
+       " 'FUT8': SpearmanrResult(correlation=-0.014705882352941175, pvalue=0.956891924031642),\n",
+       " 'FUT9': SpearmanrResult(correlation=-0.3382352941176471, pvalue=0.2000655587786896),\n",
+       " 'POFUT1': SpearmanrResult(correlation=-0.3, pvalue=0.25893645256249886),\n",
+       " 'POFUT2': SpearmanrResult(correlation=0.07647058823529412, pvalue=0.7783409809607029),\n",
+       " '\\\\meanwhat_gdsc.txt': SpearmanrResult(correlation=0.9205882352941176, pvalue=4.3204104274523115e-07),\n",
+       " '\\\\GDSC_targeted.txt': SpearmanrResult(correlation=1.0, pvalue=0.0),\n",
+       " '\\\\GDSC_cytotoxic.txt': SpearmanrResult(correlation=0.7794117647058825, pvalue=0.00037168023647875503)}"
+      ]
+     },
+     "execution_count": 47,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "## Targeted drugs\n",
+    "\n",
+    "correlations={}\n",
+    "for col in FUT_all_df.columns:\n",
+    "    correlations[col]=spearmanr(FUT_all_df[col],FUT_all_df['\\GDSC_targeted.txt'])\n",
+    "correlations"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 48,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{'Group': SpearmanrResult(correlation=0.02058823529411765, pvalue=0.9396737397890448),\n",
+       " 'FUT10': SpearmanrResult(correlation=-0.5352941176470588, pvalue=0.03261586329402191),\n",
+       " 'FUT11': SpearmanrResult(correlation=0.044117647058823525, pvalue=0.8711220048065985),\n",
+       " 'FUT1': SpearmanrResult(correlation=0.42352941176470593, pvalue=0.10210932208599745),\n",
+       " 'FUT2': SpearmanrResult(correlation=-0.18235294117647058, pvalue=0.49907485724580003),\n",
+       " 'FUT4': SpearmanrResult(correlation=-0.1764705882352941, pvalue=0.5132505967364668),\n",
+       " 'FUT6': SpearmanrResult(correlation=0.3323529411764706, pvalue=0.2084998279822084),\n",
+       " 'FUT8': SpearmanrResult(correlation=-0.1647058823529412, pvalue=0.5421481352010777),\n",
+       " 'FUT9': SpearmanrResult(correlation=-0.3558823529411765, pvalue=0.1761037380915931),\n",
+       " 'POFUT1': SpearmanrResult(correlation=-0.5882352941176471, pvalue=0.016539722195378158),\n",
+       " 'POFUT2': SpearmanrResult(correlation=-0.08823529411764705, pvalue=0.7452220943671326),\n",
+       " '\\\\meanwhat_gdsc.txt': SpearmanrResult(correlation=0.8323529411764706, pvalue=6.328124573232542e-05),\n",
+       " '\\\\GDSC_targeted.txt': SpearmanrResult(correlation=0.7794117647058825, pvalue=0.00037168023647875503),\n",
+       " '\\\\GDSC_cytotoxic.txt': SpearmanrResult(correlation=1.0, pvalue=0.0)}"
+      ]
+     },
+     "execution_count": 48,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "## Cytotoxic drugs\n",
+    "\n",
+    "correlations={}\n",
+    "for col in FUT_all_df.columns:\n",
+    "    correlations[col]=spearmanr(FUT_all_df[col],FUT_all_df['\\GDSC_cytotoxic.txt'])\n",
+    "correlations"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "###########################################################"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 50,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--- cancer type sync ---\n",
+      "--- Data loading ---\n",
+      "0 ACC\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "1 BLCA\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "C:\\Users\\USER\\Anaconda3\\lib\\site-packages\\numpy\\core\\fromnumeric.py:3584: RuntimeWarning: Degrees of freedom <= 0 for slice\n",
+      "  **kwargs)\n",
+      "C:\\Users\\USER\\Anaconda3\\lib\\site-packages\\numpy\\core\\_methods.py:209: RuntimeWarning: invalid value encountered in double_scalars\n",
+      "  ret = ret.dtype.type(ret / rcount)\n",
+      "C:\\Users\\USER\\Anaconda3\\lib\\site-packages\\scipy\\stats\\_distn_infrastructure.py:903: RuntimeWarning: invalid value encountered in greater\n",
+      "  return (a < x) & (x < b)\n",
+      "C:\\Users\\USER\\Anaconda3\\lib\\site-packages\\scipy\\stats\\_distn_infrastructure.py:903: RuntimeWarning: invalid value encountered in less\n",
+      "  return (a < x) & (x < b)\n",
+      "C:\\Users\\USER\\Anaconda3\\lib\\site-packages\\scipy\\stats\\_distn_infrastructure.py:1912: RuntimeWarning: invalid value encountered in less_equal\n",
+      "  cond2 = cond0 & (x <= _a)\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "2 BRCA\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "3 CESC\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "4 CHOL\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "5 COAD\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "6 DLBC\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "7 ESCA\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "8 GBM\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "9 HNSC\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "10 KICH\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "11 KIRC\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "12 KIRP\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "13 LGG\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "14 LIHC\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "15 LUAD\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "16 LUSC\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "17 MESO\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "18 OV\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "19 PAAD\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "20 PCPG\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "21 PRAD\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "22 READ\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "23 SARC\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "24 SKCM\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "25 STAD\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "26 TGCT\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "27 THCA\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "28 THYM\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "29 UCEC\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "30 UCS\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n",
+      "31 UVM\n",
+      "0 Core\n",
+      "1 Glycosylation\n",
+      "2 O-linked\n",
+      "3 N-linked\n"
+     ]
+    }
+   ],
+   "source": [
+    "# 3. Secretome level and drug sensitivity per cancer type\n",
+    "\n",
+    "# Sync cancer types\n",
+    "cancer_type=pd.read_csv(os.getcwd()+'\\data\\CancerTypeSync_Secretome.csv',header=None,index_col=0,squeeze=True)\n",
+    "cancer_dict=cancer_type.to_dict()\n",
+    "cancer_dict\n",
+    "print('--- Sync cancer type ---')\n",
+    "\n",
+    "##. Core secretome - Protein glycosylation\n",
+    "Secretome_file=pd.read_excel(os.path.join(os.getcwd(),'data\\Core secretome dataset\\Consensus Biomarker Scores of the Classic Secreted Secretome Genes.xlsx'),None)\n",
+    "cancers=list(Secretome_file.keys())[1:]\n",
+    "Genes_file=pd.read_excel(os.path.join(os.getcwd(),'data\\Glycosylation_GO_gene_lists.xlsx'),0)\n",
+    "Secretome=pd.DataFrame(columns=('Group','Core','Glycosylation','O-linked','N-linked','pval_Core','pval_Glycosylation','pval_O-linked','pval_N-linked'))\n",
+    "\n",
+    "GO = ['Core','Glycosylation','O-linked','N-linked']\n",
+    "print('--- Data loading ---')\n",
+    "for i,cancer in enumerate(cancers):\n",
+    "    print(i,cancer)\n",
+    "    Secretome_file=pd.read_excel(os.path.join(os.getcwd(),'data\\Core secretome dataset\\Consensus Biomarker Scores of the Classic Secreted Secretome Genes.xlsx'),sheet_name=cancer)\n",
+    "    Secretome_file=Secretome_file.replace(0,np.nan)\n",
+    "    mean=[0,0,0,0]\n",
+    "    tstat=[0,0,0,0]\n",
+    "    pval=[0,0,0,0]\n",
+    "    for j, go in enumerate(GO):\n",
+    "        print(j,go)\n",
+    "        Genes = list(Genes_file[go])\n",
+    "        Secretome_file_2=Secretome_file.loc[Secretome_file.loc[:,'gene name'].isin(Genes),:]\n",
+    "        mean[j]=Secretome_file_2.loc[:,'FC_2'].mean()\n",
+    "        ttest=ttest_ind(Secretome_file_2.loc[:,'FC_2'],[0]*len(Secretome_file_2.loc[:,'FC_2'].dropna()),equal_var=False, nan_policy='omit')\n",
+    "        tstat[j]=ttest[0]\n",
+    "        pval[j]=ttest[1]\n",
+    "    Secretome.loc[i]=[cancer,mean[0],mean[1],mean[2],mean[3],pval[0],pval[1],pval[2],pval[3]]\n",
+    "\n",
+    "    \n",
+    "    \n",
+    "    \n",
+    "Secretome=Secretome.loc[Secretome.loc[:,'Group'].isin(list(cancer_dict.keys())),:]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 52,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--- GDSC ---\n"
+     ]
+    }
+   ],
+   "source": [
+    "\n",
+    "##. Drug Sensitivity data\n",
+    "#### GDSC\n",
+    "GDSC_list = ['\\meanwhat_gdsc.txt','\\GDSC_targeted.txt','\\GDSC_cytotoxic.txt']\n",
+    "\n",
+    "print('--- GDSC ---')\n",
+    "\n",
+    "GDSC_result=[]\n",
+    "for i, GDSC in enumerate(GDSC_list):\n",
+    "    GDSC_drug=pd.read_csv(os.getcwd()+\"\\data\\Drug sensitivity datasets\"+GDSC,sep='\\t')\n",
+    "    \n",
+    "    GDSC_drug=GDSC_drug.replace(0,np.nan)\n",
+    "    GDSC_drug=GDSC_drug.replace('False',np.nan)\n",
+    "    GDSC_drug.loc[:,'Drug_mean']=GDSC_drug.iloc[:,1:].mean(axis=1)\n",
+    "    GDSC_drug.loc[:,'n']=GDSC_drug.iloc[:,1:-1].count(axis='columns')\n",
+    "    GDSC_drug=GDSC_drug.loc[GDSC_drug.loc[:,'Group'].isin(list(cancer_dict.keys())),:]\n",
+    "\n",
+    "\n",
+    "    temp_dict={}\n",
+    "    for index in GDSC_drug.index:\n",
+    "        conv_Group=cancer_dict[GDSC_drug.loc[index,'Group']]\n",
+    "        drug_mean=GDSC_drug.loc[index,'Drug_mean']\n",
+    "        n=GDSC_drug.loc[index,'n']\n",
+    "\n",
+    "\n",
+    "        if conv_Group not in temp_dict:\n",
+    "            temp_dict[conv_Group]=[drug_mean,n]\n",
+    "\n",
+    "        else:\n",
+    "            temp_dict[conv_Group]=[(temp_dict[conv_Group][0]*temp_dict[conv_Group][1]+drug_mean*n)/(temp_dict[conv_Group][1]+n),(temp_dict[conv_Group][1]+n)]\n",
+    "\n",
+    "    for keys in temp_dict.keys():\n",
+    "        temp_dict[keys]=temp_dict[keys][0]\n",
+    "    temp_dict={'Group':list(temp_dict.keys()),GDSC_list[i]:list(temp_dict.values())}\n",
+    "    temp_df=pd.DataFrame(temp_dict)\n",
+    "    Secretome=pd.merge(Secretome,temp_df,on='Group')\n",
+    "Secretome=Secretome.drop([5,14])\n",
+    "Secretome.to_csv('Secretome_result.csv', sep=',', na_rep='NaN')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 55,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{'Group': SpearmanrResult(correlation=0.41804511278195483, pvalue=0.06662156350962728),\n",
+       " 'Core': SpearmanrResult(correlation=0.4451127819548871, pvalue=0.04922529669211778),\n",
+       " 'Glycosylation': SpearmanrResult(correlation=0.4812030075187969, pvalue=0.031711044624462434),\n",
+       " 'O-linked': SpearmanrResult(correlation=0.49624060150375937, pvalue=0.026051464707248898),\n",
+       " 'N-linked': SpearmanrResult(correlation=0.40451127819548865, pvalue=0.07688442544807973),\n",
+       " 'pval_Core': SpearmanrResult(correlation=-0.306766917293233, pvalue=0.1883231984785576),\n",
+       " 'pval_Glycosylation': SpearmanrResult(correlation=-0.2571428571428572, pvalue=0.27375050350001584),\n",
+       " 'pval_O-linked': SpearmanrResult(correlation=-0.27669172932330827, pvalue=0.23761884061099176),\n",
+       " 'pval_N-linked': SpearmanrResult(correlation=nan, pvalue=nan),\n",
+       " '\\\\meanwhat_gdsc.txt': SpearmanrResult(correlation=1.0, pvalue=0.0),\n",
+       " '\\\\GDSC_targeted.txt': SpearmanrResult(correlation=0.8812030075187969, pvalue=2.88608487615473e-07),\n",
+       " '\\\\GDSC_cytotoxic.txt': SpearmanrResult(correlation=0.8390977443609022, pvalue=3.769061929200456e-06)}"
+      ]
+     },
+     "execution_count": 55,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Speraman analysis between Secretome levels and GDSC drug sensitivities\n",
+    "\n",
+    "## Total drugs\n",
+    "\n",
+    "correlations={}\n",
+    "for col in Secretome.columns:\n",
+    "    correlations[col]=spearmanr(Secretome[col],Secretome['\\meanwhat_gdsc.txt'])\n",
+    "correlations"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 56,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{'Group': SpearmanrResult(correlation=0.4842105263157894, pvalue=0.030508493550666586),\n",
+       " 'Core': SpearmanrResult(correlation=0.393984962406015, pvalue=0.08564648173103372),\n",
+       " 'Glycosylation': SpearmanrResult(correlation=0.4195488721804511, pvalue=0.065548285182185),\n",
+       " 'O-linked': SpearmanrResult(correlation=0.41654135338345866, pvalue=0.06770800324389113),\n",
+       " 'N-linked': SpearmanrResult(correlation=0.4030075187969925, pvalue=0.07809346645156448),\n",
+       " 'pval_Core': SpearmanrResult(correlation=-0.2571428571428572, pvalue=0.27375050350001584),\n",
+       " 'pval_Glycosylation': SpearmanrResult(correlation=-0.21804511278195485, pvalue=0.35573636611773685),\n",
+       " 'pval_O-linked': SpearmanrResult(correlation=-0.19248120300751878, pvalue=0.4162064734197989),\n",
+       " 'pval_N-linked': SpearmanrResult(correlation=nan, pvalue=nan),\n",
+       " '\\\\meanwhat_gdsc.txt': SpearmanrResult(correlation=0.8812030075187969, pvalue=2.88608487615473e-07),\n",
+       " '\\\\GDSC_targeted.txt': SpearmanrResult(correlation=1.0, pvalue=0.0),\n",
+       " '\\\\GDSC_cytotoxic.txt': SpearmanrResult(correlation=0.6766917293233082, pvalue=0.0010509401983731879)}"
+      ]
+     },
+     "execution_count": 56,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "## Targeted drugs\n",
+    "\n",
+    "correlations={}\n",
+    "for col in Secretome.columns:\n",
+    "    correlations[col]=spearmanr(Secretome[col],Secretome['\\GDSC_targeted.txt'])\n",
+    "correlations"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 57,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{'Group': SpearmanrResult(correlation=0.28721804511278193, pvalue=0.21950431346270238),\n",
+       " 'Core': SpearmanrResult(correlation=0.4992481203007519, pvalue=0.025021864609017935),\n",
+       " 'Glycosylation': SpearmanrResult(correlation=0.5684210526315789, pvalue=0.008922760369500673),\n",
+       " 'O-linked': SpearmanrResult(correlation=0.5533834586466165, pvalue=0.011370353471172316),\n",
+       " 'N-linked': SpearmanrResult(correlation=0.39097744360902253, pvalue=0.08828010210661397),\n",
+       " 'pval_Core': SpearmanrResult(correlation=-0.3654135338345864, pvalue=0.11312213950560147),\n",
+       " 'pval_Glycosylation': SpearmanrResult(correlation=-0.4240601503759398, pvalue=0.06240648623134545),\n",
+       " 'pval_O-linked': SpearmanrResult(correlation=-0.40451127819548865, pvalue=0.07688442544807973),\n",
+       " 'pval_N-linked': SpearmanrResult(correlation=nan, pvalue=nan),\n",
+       " '\\\\meanwhat_gdsc.txt': SpearmanrResult(correlation=0.8390977443609022, pvalue=3.769061929200456e-06),\n",
+       " '\\\\GDSC_targeted.txt': SpearmanrResult(correlation=0.6766917293233082, pvalue=0.0010509401983731879),\n",
+       " '\\\\GDSC_cytotoxic.txt': SpearmanrResult(correlation=1.0, pvalue=0.0)}"
+      ]
+     },
+     "execution_count": 57,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "## Cytotoxic drugs\n",
+    "\n",
+    "correlations={}\n",
+    "for col in Secretome.columns:\n",
+    "    correlations[col]=spearmanr(Secretome[col],Secretome['\\GDSC_cytotoxic.txt'])\n",
+    "correlations"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.6"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
